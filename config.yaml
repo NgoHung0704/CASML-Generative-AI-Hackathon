@@ -39,14 +39,16 @@ ingestion:
 indexing:
   # Chunking strategy
   chunking:
-    strategy: "semantic"  # Options: "fixed", "semantic", "sentence", "paragraph"
-    chunk_size: 512  # tokens (for fixed strategy)
-    chunk_overlap: 50  # tokens
+    strategy: "recursive"  # Options: "fixed", "semantic", "sentence", "paragraph", "recursive"
+    chunk_size: 800  # characters/tokens (from notebook)
+    chunk_overlap: 100  # characters/tokens
     separator: "\n\n"
+    # Recursive-specific settings
+    separators: ["\n\n", "\n", ". ", " ", ""]  # LangChain RecursiveCharacterTextSplitter
   
   # Embedding model
   embedding:
-    model_name: "sentence-transformers/all-MiniLM-L6-v2"
+    model_name: "BAAI/bge-large-en-v1.5"  # BGE embedding model (from notebook)
     # For fine-tuned model from HuggingFace:
     # model_name: "your-username/your-finetuned-model"
     backend: "tensorflow"  # TensorFlow backend for sentence-transformers
@@ -74,12 +76,13 @@ retrieval:
   
   # Re-ranking
   use_reranker: true
-  reranker_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
-  rerank_top_k: 3
+  reranker_model: "BAAI/bge-reranker-v2-m3"  # FlagReranker model
+  rerank_top_k: 8
+  rerank_multiplier: 10  # Retrieve 10x documents before reranking
   
-  # Query expansion (optional)
-  query_expansion: false
-  expansion_method: "synonym"  # Options: "synonym", "llm"
+  # Query transformation (HyDE - Hypothetical Document Embeddings)
+  use_query_transformation: true
+  transformation_method: "hyde"  # Options: "hyde", "expansion", "none"
 
 # Generation Configuration
 generation:

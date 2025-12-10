@@ -1,10 +1,16 @@
 """
 Retrieval module - Query processing and document retrieval
+Enhanced with HyDE and FlagReranker
 """
 
 import numpy as np
-from typing import List, Dict, Tuple
-from sentence_transformers import CrossEncoder
+from typing import List, Dict, Tuple, Optional
+try:
+    from FlagEmbedding import FlagReranker
+    RERANKER_AVAILABLE = True
+except ImportError:
+    RERANKER_AVAILABLE = False
+    print("Warning: FlagEmbedding not available. Reranking will be disabled.")
 
 
 class Retriever:
@@ -30,42 +36,109 @@ class Retriever:
         self.dense_weight = config.get('retrieval.dense_weight', 0.6)
         self.sparse_weight = config.get('retrieval.sparse_weight', 0.4)
         
-        # Re-ranker setup
+        # Re-ranker setup (FlagReranker)
         self.use_reranker = config.get('retrieval.use_reranker', False)
         self.rerank_top_k = config.get('retrieval.rerank_top_k', 3)
+        self.rerank_multiplier = config.get('retrieval.rerank_multiplier', 10)
         
-        if self.use_reranker:
-            reranker_model = config.get('retrieval.reranker_model')
-            self.reranker = CrossEncoder(reranker_model)
+        if self.use_reranker and RERANKER_AVAILABLE:
+            reranker_model = config.get('retrieval.reranker_model', 'BAAI/bge-reranker-v2-m3')
+            self.reranker = FlagReranker(reranker_model, use_fp16=True)
         else:
             self.reranker = None
+            if self.use_reranker:
+                print("Warning: Reranker requested but FlagEmbedding not available")
+        
+        # Query transformation (HyDE)
+        self.use_query_transformation = config.get('retrieval.use_query_transformation', False)
+        self.transformation_method = config.get('retrieval.transformation_method', 'hyde')
+        self.hyde_generator = None  # Will be set externally if needed
     
-    def retrieve(self, query: str) -> List[Dict[str, any]]:
+    def set_hyde_generator(self, generator):
+        """
+        Set the LLM generator for HyDE query transformation.
+        
+        Args:
+            generator: LLMGenerator instance
+        """
+        self.hyde_generator = generator
+    
+    def transform_query(self, query: str) -> str:
+        """
+        Transform query using HyDE (Hypothetical Document Embeddings).
+        Generates a hypothetical answer, then uses it for retrieval.
+        
+        Args:
+            query: Original query
+        
+        Returns:
+            Transformed query (hypothetical document)
+        """
+        if not self.use_query_transformation:
+            return query
+        
+        if self.transformation_method == 'hyde' and self.hyde_generator:
+            # Generate hypothetical response
+            prompt = f"""You are a knowledgeable assistant generating a brief and context-rich hypothetical document based on the input query.
+This document should resemble an informative and authoritative article, providing relevant details, explanations, and examples that could answer or address the query.
+
+Instructions:
+1. Do not include follow up questions in the response.
+2. Avoid unnecessary repetition in the response.
+3. Keep the answer short and precise.
+
+Answer the question: {query}
+
+Answer:
+"""
+            response = self.hyde_generator.generate(prompt)
+            return response
+        
+        return query
+    
+    def retrieve(self, query: str, use_transformation: bool = None) -> List[Dict[str, any]]:
         """
         Retrieve relevant documents for a query.
         
         Args:
             query: Query string
+            use_transformation: Override config for query transformation
         
         Returns:
             List of retrieved documents with scores
         """
+        # Apply query transformation if enabled
+        if use_transformation is None:
+            use_transformation = self.use_query_transformation
+        
+        transformed_query = self.transform_query(query) if use_transformation else query
+        
+        # Retrieve documents
         if self.strategy == 'dense':
-            results = self._dense_retrieval(query)
+            results = self._dense_retrieval(transformed_query)
         elif self.strategy == 'sparse':
-            results = self._sparse_retrieval(query)
+            results = self._sparse_retrieval(transformed_query)
         elif self.strategy == 'hybrid':
-            results = self._hybrid_retrieval(query)
+            results = self._hybrid_retrieval(transformed_query)
         else:
             raise ValueError(f"Unknown retrieval strategy: {self.strategy}")
         
         # Apply re-ranking if enabled
         if self.use_reranker and len(results) > 0:
-            results = self._rerank(query, results)
+            # Retrieve more documents for reranking
+            k_for_rerank = self.rerank_top_k * self.rerank_multiplier
+            if self.strategy == 'dense':
+                results = self._dense_retrieval(transformed_query, k=k_for_rerank)
+            elif self.strategy == 'sparse':
+                results = self._sparse_retrieval(transformed_query, k=k_for_rerank)
+            else:
+                results = self._hybrid_retrieval(transformed_query, k=k_for_rerank)
+            
+            results = self._rerank(query, results)  # Use original query for reranking
         
         return results[:self.rerank_top_k if self.use_reranker else self.top_k]
     
-    def _dense_retrieval(self, query: str) -> List[Dict[str, any]]:
+    def _dense_retrieval(self, query: str, k: int = None) -> List[Dict[str, any]]:
         """
         Dense retrieval using FAISS.
         

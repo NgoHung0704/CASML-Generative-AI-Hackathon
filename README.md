@@ -1,103 +1,127 @@
-# CASML - Generative AI Hackathon RAG System
+# CASML RAG System - Generative AI Hackathon
 
-Hệ thống **Retrieval-Augmented Generation (RAG)** modular cho cuộc thi [CASML Generative AI Hackathon](https://www.kaggle.com/competitions/casml-generative-ai-hackathon) trên Kaggle.
+Hệ thống **Retrieval-Augmented Generation (RAG)** cho [CASML Generative AI Hackathon](https://www.kaggle.com/competitions/casml-generative-ai-hackathon).
 
-## 📋 Mục lục
-
-- [Giới thiệu](#giới-thiệu)
-- [Kiến trúc hệ thống](#kiến-trúc-hệ-thống)
-- [Cấu trúc dự án](#cấu-trúc-dự-án)
-- [Cài đặt](#cài-đặt)
-- [Sử dụng](#sử-dụng)
-- [Cấu hình](#cấu-hình)
-- [Mô-đun chi tiết](#mô-đun-chi-tiết)
-- [Tùy chỉnh & mở rộng](#tùy-chỉnh--mở-rộng)
-
----
-
-## 🎯 Giới thiệu
-
-Dự án này xây dựng một hệ thống hỏi–đáp (Q&A) sử dụng **RAG Pipeline** để:
-1. **Truy xuất** các đoạn văn liên quan từ corpus (sách/tài liệu)
-2. **Sinh câu trả lời** chính xác dựa trên ngữ cảnh được truy xuất bằng LLM
-
-### Đặc điểm chính:
-- ✅ **Modular**: Dễ dàng thay đổi embedding model, retriever, hoặc LLM
-- ✅ **Reproducible**: Seed cố định, cấu hình rõ ràng
-- ✅ **Flexible**: Hỗ trợ nhiều chiến lược retrieval (dense, sparse, hybrid)
-- ✅ **Optimized**: Thiết kế cho GPU hạn chế, hỗ trợ quantization
-- ✅ **Kaggle-ready**: Script tự động tạo submission file
-
----
-
-## 🏗️ Kiến trúc hệ thống
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         RAG PIPELINE                             │
-└─────────────────────────────────────────────────────────────────┘
-                                ↓
-    ┌──────────────────────────────────────────────────────┐
-    │  1. DATA INGESTION LAYER                             │
-    │     - Load corpus (books/documents)                  │
-    │     - Parse & clean text                             │
-    │     - Load Q&A dataset                               │
-    └──────────────────┬───────────────────────────────────┘
-                       ↓
-    ┌──────────────────────────────────────────────────────┐
-    │  2. INDEXING LAYER                                   │
-    │     - Text chunking (semantic/fixed-size)            │
-    │     - Embedding generation (sentence-transformers)   │
-    │     - Index building (FAISS/BM25/Hybrid)             │
-    └──────────────────┬───────────────────────────────────┘
-                       ↓
-    ┌──────────────────────────────────────────────────────┐
-    │  3. RETRIEVAL LAYER                                  │
-    │     - Query embedding                                │
-    │     - Top-K retrieval (dense/sparse/hybrid)          │
-    │     - Re-ranking (optional: cross-encoder)           │
-    └──────────────────┬───────────────────────────────────┘
-                       ↓
-    ┌──────────────────────────────────────────────────────┐
-    │  4. GENERATION LAYER                                 │
-    │     - Context assembly (retrieved chunks)            │
-    │     - Prompt engineering                             │
-    │     - LLM inference (HuggingFace/OpenAI/local)       │
-    └──────────────────┬───────────────────────────────────┘
-                       ↓
-    ┌──────────────────────────────────────────────────────┐
-    │  5. EVALUATION & SUBMISSION LAYER                    │
-    │     - Metric calculation (BLEU/ROUGE/Similarity)     │
-    │     - Generate submission CSV                        │
-    └──────────────────────────────────────────────────────┘
-```
-
----
-
-## 📁 Cấu trúc dự án
+## 📁 Project Structure (Optimized)
 
 ```
 CASML-Generative-AI-Hackathon/
+├── data/
+│   ├── raw/                    # Original PDF files
+│   │   └── book.pdf
+│   ├── processed/              # Cached chunks & embeddings
+│   │   ├── chunks.pkl
+│   │   └── embeddings.npy
+│   └── test_questions.json     # Test queries
 │
-├── data/                          # Dữ liệu
-│   ├── raw/                       # Corpus & Q&A gốc từ Kaggle
-│   ├── processed/                 # Chunks đã xử lý
-│   ├── embeddings/                # Vector embeddings
-│   ├── indexes/                   # FAISS/BM25 indexes
-│   └── submissions/               # Submission files cho Kaggle
+├── models/                     # Saved models & indexes
+│   ├── faiss_index.bin         # FAISS vector index
+│   └── chunk_texts.pkl         # Text chunks for retrieval
 │
-├── src/                           # Source code chính
-│   ├── config/                    # Quản lý cấu hình
-│   │   ├── __init__.py
-│   │   └── config_manager.py      # Load config.yaml & .env
-│   │
-│   ├── ingestion/                 # Load & preprocess dữ liệu
-│   │   ├── __init__.py
-│   │   └── data_loader.py         # CorpusLoader, QADataLoader
-│   │
-│   ├── indexing/                  # Chunking & embedding
-│   │   ├── __init__.py
-│   │   └── indexer.py             # TextChunker, EmbeddingGenerator, IndexBuilder
+├── outputs/                    # Generated outputs
+│   └── submission.csv          # Kaggle submission
+│
+├── notebooks/
+│   ├── rag_pipeline_modular.ipynb  # Main pipeline (build from scratch)
+│   └── demo_qa.ipynb              # Quick demo (use pre-built index)
+│
+├── src/                        # Source code (modular components)
+│   ├── config/
+│   ├── ingestion/
+│   ├── indexing/
+│   ├── retrieval/
+│   ├── generation/
+│   └── evaluation/
+│
+├── config.yaml                 # Pipeline configuration
+├── requirements.txt            # Python dependencies
+└── README.md
+```
+
+## 🚀 Quick Start
+
+### 1. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Run Pipeline
+
+**Option A: Build from scratch (5-10 min)**
+```bash
+jupyter notebook notebooks/rag_pipeline_modular.ipynb
+# Run cells 1-8: Load → Chunk → Embed → Index → Retrieve
+```
+
+**Option B: Use pre-built index (instant)**
+```bash
+jupyter notebook notebooks/demo_qa.ipynb
+# Load saved index and query immediately
+```
+
+## 📊 Pipeline Overview
+
+### Current Implementation (Notebook)
+
+1. **PDF Loading** - LangChain PyPDFLoader
+2. **Chunking** - Recursive splitting (1000 chars, 200 overlap)
+3. **Embedding** - BAAI/bge-large-en-v1.5 (1024 dims)
+4. **Indexing** - FAISS IndexFlatIP (cosine similarity)
+5. **Retrieval** - Two-stage:
+   - FAISS: Fast search (50 candidates)
+   - FlagReranker: Accurate reranking (top 5)
+
+### Next Steps (To Complete)
+
+6. **LLM Generation** - Add answer generation
+7. **TOC Extraction** - Extract references from PDF
+8. **Batch Processing** - Process all test queries
+9. **Submission** - Generate CSV for Kaggle
+
+## 🔧 Key Features
+
+- ✅ **Two-stage retrieval**: FAISS (speed) + FlagReranker (accuracy)
+- ✅ **BGE embeddings**: State-of-the-art semantic search
+- ✅ **No TensorFlow conflicts**: Pure PyTorch stack
+- ✅ **GPU optimized**: sentence-transformers CUDA support
+- 🔨 **Coming**: Index caching, LLM integration, TOC references
+
+## 📝 Usage Example
+
+### Quick Retrieval Test
+```python
+# Already in notebook cells 6-8
+
+# Search
+query = "What did Freud contribute to psychology?"
+query_emb = embedding_model.encode([query])
+distances, indices = index.search(query_emb, k=50)
+
+# Rerank
+pairs = [[query, chunk_texts[idx]] for idx in indices[0]]
+scores = reranker_model.compute_score(pairs)
+
+# Top 5 results
+for idx, score in top_5:
+    print(f"Score: {score:.4f}")
+    print(chunk_texts[idx][:200])
+```
+
+## 🎯 Performance
+
+- **Embedding**: ~100 chunks/sec (GPU)
+- **FAISS search**: <2ms (2543 vectors)
+- **Reranking**: ~100ms (50 candidates)
+- **Total**: ~5 min for 645 pages
+
+## 📚 Tech Stack
+
+- [sentence-transformers](https://www.sbert.net/) - Embeddings
+- [FAISS](https://github.com/facebookresearch/faiss) - Vector search
+- [FlagEmbedding](https://github.com/FlagOpen/FlagEmbedding) - Reranking
+- [LangChain](https://python.langchain.com/) - PDF processing
+
+## 🔗 Resources
 │   │
 │   ├── retrieval/                 # Truy xuất documents
 │   │   ├── __init__.py

@@ -39,15 +39,19 @@ ENV/
 .env.local
 
 # Data Files (exclude large data from git)
-data/raw/*
+data/raw/*.pdf
 data/processed/*
-data/embeddings/*
-data/indexes/*
-data/submissions/*
-!data/raw/.gitkeep
 !data/processed/.gitkeep
-!data/embeddings/.gitkeep
-!data/indexes/.gitkeep
+
+# Models (exclude large model files)
+models/*.bin
+models/*.pkl
+models/*.npy
+!models/.gitkeep
+
+# Outputs
+outputs/*.csv
+!outputs/.gitkeep
 !data/submissions/.gitkeep
 
 # Model Checkpoints

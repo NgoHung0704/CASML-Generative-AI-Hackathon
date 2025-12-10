@@ -16,6 +16,7 @@ import tensorflow as tf
 class TextChunker:
     """
     Splits corpus into chunks for indexing.
+    Supports multiple strategies including RecursiveCharacterTextSplitter.
     """
     
     def __init__(self, config):
@@ -30,6 +31,7 @@ class TextChunker:
         self.chunk_size = config.get('indexing.chunking.chunk_size', 512)
         self.chunk_overlap = config.get('indexing.chunking.chunk_overlap', 50)
         self.separator = config.get('indexing.chunking.separator', '\n\n')
+        self.separators = config.get('indexing.chunking.separators', ['\n\n', '\n', '. ', ' ', ''])
     
     def chunk_text(self, text: str) -> List[str]:
         """
@@ -49,8 +51,61 @@ class TextChunker:
             return self._chunk_by_sentence(text)
         elif self.strategy == 'paragraph':
             return self._chunk_by_paragraph(text)
+        elif self.strategy == 'recursive':
+            return self._chunk_recursive(text)
         else:
             raise ValueError(f"Unknown chunking strategy: {self.strategy}")
+    
+    def chunk_documents(self, documents: List[Dict]) -> List[Dict]:
+        """
+        Chunk documents from PDF loader.
+        
+        Args:
+            documents: List of document dicts with page_content and metadata
+        
+        Returns:
+            List of chunked documents with chunk IDs
+        """
+        all_chunks = []
+        last_page_id = None
+        current_chunk_index = 0
+        
+        for doc in documents:
+            text = doc['page_content']
+            metadata = doc['metadata']
+            
+            # Skip empty pages
+            if not text or text.strip() == "":
+                continue
+            
+            # Chunk the text
+            chunks = self._chunk_recursive(text) if self.strategy == 'recursive' else [text]
+            
+            # Add metadata and IDs to each chunk
+            for chunk_text in chunks:
+                source = metadata.get('source', 'unknown')
+                page = metadata.get('page', 0)
+                current_page_id = f"{source}:{page}"
+                
+                # Increment chunk index for same page
+                if current_page_id == last_page_id:
+                    current_chunk_index += 1
+                else:
+                    current_chunk_index = 0
+                
+                chunk_id = f"{current_page_id}:{current_chunk_index}"
+                last_page_id = current_page_id
+                
+                all_chunks.append({
+                    'page_content': chunk_text,
+                    'metadata': {
+                        **metadata,
+                        'id': chunk_id,
+                        'chunk_index': current_chunk_index
+                    }
+                })
+        
+        return all_chunks
     
     def _chunk_fixed_size(self, text: str) -> List[str]:
         """Split by fixed token/character count with overlap"""
@@ -96,6 +151,46 @@ class TextChunker:
         """Split by paragraphs"""
         paragraphs = text.split(self.separator)
         return [p.strip() for p in paragraphs if p.strip()]
+    
+    def _chunk_recursive(self, text: str) -> List[str]:
+        """
+        Recursive character text splitter (LangChain-style).
+        Tries to split by separators in order until chunk size is met.
+        """
+        chunks = []
+        
+        def split_text(text, separators):
+            if len(text) <= self.chunk_size:
+                return [text] if text else []
+            
+            # Try each separator
+            for separator in separators:
+                if separator in text:
+                    splits = text.split(separator)
+                    break
+            else:
+                # No separator found, split by character
+                splits = [text[i:i+self.chunk_size] for i in range(0, len(text), self.chunk_size - self.chunk_overlap)]
+                return splits
+            
+            # Merge splits into chunks
+            result = []
+            current_chunk = ""
+            
+            for split in splits:
+                if len(current_chunk) + len(split) + len(separator) <= self.chunk_size:
+                    current_chunk += split + separator
+                else:
+                    if current_chunk:
+                        result.append(current_chunk.strip())
+                    current_chunk = split + separator
+            
+            if current_chunk:
+                result.append(current_chunk.strip())
+            
+            return result
+        
+        return split_text(text, self.separators)
 
 
 class EmbeddingGenerator:
